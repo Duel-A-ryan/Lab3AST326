@@ -3,7 +3,6 @@ import astropy
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.optimize as sc
-
 import warnings
 from astropy import units as u
 from astropy.coordinates import SkyCoord
@@ -12,7 +11,6 @@ from astropy.wcs.utils import skycoord_to_pixel
 warnings.filterwarnings('ignore', category=UserWarning, append=True)
 warnings.filterwarnings("ignore", category=astropy.wcs.FITSFixedWarning)
 
-from datetime import datetime
 
 # Shape --> {key: [Coordinates in sky (degrees), magnitude, uncertainty in magnitude]}
 OBJECTS = {
@@ -54,27 +52,11 @@ def gaussian(x, a, x0, sigma, c):
     return a * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2)) + c
 
 
-def centroid(image):
-    """
-    Finds the (x,y) pixel positions of the centroids in a 2D array based on weighted averages
-
-    :param image: 2D numpy array, sub image data
-    :return: float, Centroid of x and float, Centroid of y
-    """
-    # Sets values to hold the summations
-    I, Ix, Iy = 0.0, 0.0, 0.0
-
-    # Loops through the rows of the image
-    for j in range(0, len(image)):
-
-        # Loops through each pixel in the row
-        for i in range(0, len(image[j])):
-            # Sums the values from each pixel
-            I += image[j, i]
-            Ix += i * image[j, i]
-            Iy += j * image[j, i]
-
-    return Ix / I, Iy / I
+def get_centroid(image):
+    x_values = np.arange(image.shape[1]) - image.shape[1] // 2
+    x_centroid = np.sum(x_values * image ** 2) / np.sum(image ** 2)
+    y_centroid = np.sum(x_values * image.T ** 2) / np.sum(image ** 2)
+    return np.array([y_centroid, x_centroid])
 
 
 def get_aperture(shape, center, radius):
@@ -130,10 +112,10 @@ def get_flux(sub, app, ann, gain=4):
     else:
         I_bg = 0
         print("ERROR")
-    F = np.sum(sub[app > 0] * app[app > 0] - I_bg)
+    F = np.sum((sub[app > 0] - I_bg) * app[app > 0])
 
-    std_bg = np.std(ann)
-    unc_F = np.sqrt((F / gain) + N_app * (np.pi / 2) * (N_app / N_ann) * std_bg ** 2)
+    std_bg = np.std(sub*ann)
+    unc_F = np.sqrt((F / gain) + N_app * (1 + (np.pi / 2) * (N_app / N_ann) * std_bg ** 2))
 
     return F, unc_F
 
@@ -153,9 +135,24 @@ def magnitude(I1, uI1, I2, uI2, m2, um2):
              object
     """
     # Uses equation listed on Slide __ of ___
-    m1 = m2 - 2.512 * np.log10(I1 / I2)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            m1 = m2 - 2.512 * np.log10(I1 / I2)
+    except RuntimeWarning as e:
+        print(f"RuntimeWarning: {e}")
+        m1 = -1
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        m1 = -1
     # Derived from information listen on Slide __ of ___
-    um1 = um2 ** 2 + (-2.512 / (np.log(10) * I1)) ** 2 * uI1 ** 2 + (2.512 / (np.log(10) * I2)) ** 2 * uI2 ** 2
+    try:
+        um1 = np.sqrt(um2 ** 2 + (-2.512 / (np.log(10) * I1)) ** 2 * uI1 ** 2 +
+                      (2.512 / (np.log(10) * I2)) ** 2 * uI2 ** 2
+                      )
+    except:
+        um1 = -1
+
     return m1, um1
 
 
@@ -174,6 +171,9 @@ def fluxes(data, key, w):
              2D NumPy array, annulus data,
              bool: True if file is considered bad
     """
+    min_value = np.min(data)
+    data = data + min_value
+
     # Set bad_file to False until shown to be poor quality
     bad_file = False
 
@@ -187,23 +187,22 @@ def fluxes(data, key, w):
     boxsize = 50
     sub_im = data[y - boxsize: y + boxsize + 1, x - boxsize: x + boxsize + 1]
 
+    #centroid = np.round(get_centroid(sub_im), 0).astype(int)
+    #y += centroid[0]
+    #x += centroid[1]
+
+    #sub_im = data[y - boxsize: y + boxsize + 1, x - boxsize: x + boxsize + 1]
     # Finds the centroids of the plot and then calculates the pixel offset from the center and the centroid
     # The offset is then accounted for and a new sub image is created with the object now centered
-    """
-    cx, cy = centroid(sub_im)
-    x_offset, y_offset = (x-cx).astype(int), (y-cy).astype(int)
-    x, y = x+x_offset, y+y_offset
-    sub_im = data[y - boxsize: y + boxsize + 1, x - boxsize: x + boxsize + 1]
-    """
 
     # Checks if the final image is the correct shape
-    if sub_im.shape == (2*boxsize+1, 2*boxsize+1):
+    if sub_im.shape == (2 * boxsize + 1, 2 * boxsize + 1):
 
         # Gets a tuple with the shape of the 2D array to then get a singular row going through the center of the object
         # Gaussian curve fit is then applied to find the standard deviation from the rows intensity data
         shape = sub_im.shape[0]
         gaus_x, gaus_y = np.arange(shape), sub_im[shape // 2, :]
-        popt, _ = sc.curve_fit(gaussian, gaus_x, gaus_y, p0=[max(gaus_y), shape // 2, 10, 0], maxfev=3000)
+        popt, _ = sc.curve_fit(gaussian, gaus_x, gaus_y, p0=[max(gaus_y), shape // 2, 10, 0], maxfev=200000)
 
         # Plots the Gaussian alongside the data points
         """
@@ -226,7 +225,7 @@ def fluxes(data, key, w):
             annulus = get_annulus(sub_im.shape, (50, 50), (12, 15))
 
         # Plot the star sub images TODO: hopefully centered next time
-        sub_im_plotting(sub_im, radius)
+        #sub_im_plotting(sub_im, radius)
 
         return sub_im, aperture, annulus, bad_file
     else:
@@ -262,3 +261,21 @@ def mag_to_flux(m, const=0):
     :return: Intensity relating to the provided magnitude
     """
     return 10 ** (-m / 2.5) * 10 ** (const / 2.5)
+
+
+def mag_mean(mag, mag_unc):
+    """
+
+    :param mag: NumPy array, len(mag) == 3 and contains magnitudes
+    :param mag_unc: NumPy array, len(mag_unc) == 3 and contains uncertainty in magnitudes
+    :return: float, average magnitude and float, uncertainty in magnitude
+    """
+    sum_w, sum_xw, numerator = 0, 0, 0
+
+    for i in range(0, len(mag)):
+        w = 1 / mag_unc[i] ** 2
+        sum_w += w
+        sum_xw += mag[i] * w
+        numerator += mag_unc[i] ** 2
+
+    return sum_xw/sum_w, np.sqrt(numerator / 9)

@@ -37,7 +37,7 @@ filenames = np.array(filenames)
 
 # Sets arrays to carry flux and magnitude data for the reference stars and supernova
 # Rows 0,1,2 hold data for reference stars while row 4 is saved for flux of supernova
-file_array = filenames[300:305]
+file_array = filenames
 fluxes = np.zeros((4, len(file_array)))
 flux_errs = np.zeros((4, len(file_array)))
 mag = np.zeros(len(file_array))
@@ -84,7 +84,7 @@ for ii, f in enumerate(file_array):
                                                       OBJECTS[key][2])
 
     # Updates magnitude and magnitude error
-    mag[ii], mag_err[ii] = np.mean(mag_sn), np.mean(mag_err_sn)
+    mag[ii], mag_err[ii] = pf.mag_mean(mag_sn, mag_err_sn)
 
 
 # Plots apparent magnitude light curve
@@ -95,5 +95,20 @@ plt.xlabel("Time [Ms]")
 plt.ylabel("Apparent Magnitude")
 plt.ylim(25, 18)
 plt.legend()
-plt.savefig("Plots/Magnitude_Plots")
+plt.savefig("Plots/Magnitude_Plots_temp")
 plt.show()
+
+with open("Data/cleaned data/times", "w") as f:
+    for line in time:
+        f.write(str(line))
+        f.write('\n')
+
+with open("Data/cleaned data/mags", "w") as f:
+    for line in mag:
+        f.write(str(line))
+        f.write('\n')
+
+with open("Data/cleaned data/mag_uncs", "w") as f:
+    for line in mag_err:
+        f.write(str(line))
+        f.write('\n')
