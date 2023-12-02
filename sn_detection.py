@@ -23,68 +23,39 @@ OBJECTS = {
     "SN": [SkyCoord(ra="0:57:03.1827", dec='-37:02:23.654', frame="icrs", unit=(u.hourangle, u.deg)), 0, 0]}
 
 """=====MAIN====="""
-file = "Data/Fits/AST325-326-SN-20150920.9014.fits"
-f = fits.open(file)
-data = f[0].data
-header = f[0].header
+# Read text file of all the file names
+with open("Data/AST325-326-SN-filelist.txt") as f:
+    filenames = ["Data/Fits/" + line for line in f.readlines()]
 
-dt = datetime.fromisoformat(header["DATE-OBS"])
+# Organizes the files in order of date collected
+file_times = []
+for f in filenames:
+    header = fits.open(f[:-1])[0].header
+    dt = datetime.fromisoformat(header["DATE-OBS"])
+    file_times.append(dt)
 
-pf.show_ds9(data, dt)
+# sort files by the same way
+file_times, filenames = zip(*sorted(zip(file_times, filenames)))
 
-plt.figure(figsize=(12,5))
-plt.hist(data.flatten(), bins = 'sturges', color = 'k', histtype='step')
-plt.grid(alpha=0.5)
-plt.yscale('log')
-plt.xlabel("Pixel Value [ADU]", size = 16)
-plt.ylabel("Number of Pixels", size = 16)
-plt.show()
+# Turns the lists into numpy arrays
+filenames = np.array(filenames)
+file_times = np.array(file_times)
 
+file_array = filenames[100:110]
 
-def two_d_gaussian(x, y, ux, uy, sx, sy, A):
-    return A * np.exp(-1 * ((x - ux) ** 2 / (2 * sx ** 2) + (y - uy) ** 2 / (2 * sy ** 2)))
+fluxes = np.zeros(len(file_array))
+flux_errs = np.zeros(len(file_array))
 
+for ii, file in enumerate(file_array):
 
-def gaus(x, a, x0, sigma, c):
-    return a * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2)) + c
+    data, header = pf.fit_open(file[:-1])
 
+    w = WCS(header)
 
-def fake_star(amplitude, noise):
-    axis = np.arange(-100, 101).astype(float)
-    x, y = np.meshgrid(axis, axis)
+    # Gets sub image data, aperture and annulus of supernova
+    sub_im, aperture, annulus, _ = pf.fluxes(data, "SN", w)
 
-    data = np.zeros_like(x)
+    fluxes[ii], flux_errs[ii] = pf.get_flux(sub_im, aperture, annulus)
 
-    data += two_d_gaussian(x, y, 0, 0, 3, 3, amplitude)
-
-    return data + np.random.normal(0, noise, x.shape) + 20
-
-
-file = fits.open("Data/Fits/AST325-326-SN-20151009.0868.fits")[0]
-data, header = file.data, file.header
-
-data[data < 0] = 0  # Sets any negative values to zero
-w = WCS(header)
-
-# Finding pixel center for detected supernova
-ref_pos = skycoord_to_pixel(OBJECTS["star_1"][0], w)
-x_raw, y_raw = ref_pos
-x, y = x_raw.astype(int), y_raw.astype(int)
-
-# Setting the sub image size
-boxsize = 50
-
-sub_im = data[y - boxsize: y + boxsize + 1, x - boxsize: x + boxsize + 1]
-pf.show_ds9(sub_im, "test")
-shape = sub_im.shape[0]
-x, y = np.arange(shape), sub_im[shape // 2, :]
-popt, pcov = sc.curve_fit(pf.gaussian, x, y, p0=[max(y), shape//2, 10, 0])
-
-print(popt)
-plt.figure(figsize=(10, 5))
-plt.plot(x, y, 'x', color='k', label='Central Row')
-plt.plot(x, gaus(x, *popt), color='r', alpha=0.3, label=f'Best-fit Gaussian (STD {round(popt[2], 1)})')
-plt.legend()
-plt.show()
-
-# potential = ["Data/Fits/AST325-326-SN-20150924.9819.fits", ]
+print(fluxes)
+print(flux_errs)

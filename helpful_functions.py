@@ -7,6 +7,7 @@ import warnings
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.wcs.utils import skycoord_to_pixel
+from astropy.io import fits
 
 warnings.filterwarnings('ignore', category=UserWarning, append=True)
 warnings.filterwarnings("ignore", category=astropy.wcs.FITSFixedWarning)
@@ -35,6 +36,7 @@ def show_ds9(data, title):
                origin='lower',
                cmap='inferno'
                )
+    plt.colorbar()
     plt.title(title)
 
 
@@ -114,8 +116,13 @@ def get_flux(sub, app, ann, gain=4):
         print("ERROR")
     F = np.sum((sub[app > 0] - I_bg) * app[app > 0])
 
-    std_bg = np.std(sub*ann)
+    std_bg = np.std((sub * ann)/N_ann)
     unc_F = np.sqrt((F / gain) + N_app * (1 + (np.pi / 2) * (N_app / N_ann) * std_bg ** 2))
+
+    #term1 = F / gain
+    #term2 = N_app * (1 + np.pi / 2 * N_app / N_ann) * std_bg ** 2
+
+    #unc_F = np.sqrt(term1 + term2)
 
     return F, unc_F
 
@@ -205,11 +212,11 @@ def fluxes(data, key, w):
         popt, _ = sc.curve_fit(gaussian, gaus_x, gaus_y, p0=[max(gaus_y), shape // 2, 10, 0], maxfev=200000)
 
         # Plots the Gaussian alongside the data points
-        """
-        plt.plot(gaus_x, gaus_y, '.', label="Data Points")
-        plt.plot(gaus_x, gaussian(gaus_x, *popt), label=fr"Gaussian with $\sigma = {popt[2]:.3}$", color="red")
-        plt.legend()
-        """
+
+        #plt.plot(gaus_x, gaus_y, '.', label="Data Points")
+        #plt.plot(gaus_x, gaussian(gaus_x, *popt), label=fr"Gaussian with $\sigma = {popt[2]:.3}$", color="red")
+        #plt.legend()
+
 
         # Calculates the optimal radius for the aperture from the standard deviation
         radius = 2.355 * popt[2]
@@ -225,7 +232,7 @@ def fluxes(data, key, w):
             annulus = get_annulus(sub_im.shape, (50, 50), (12, 15))
 
         # Plot the star sub images TODO: hopefully centered next time
-        #sub_im_plotting(sub_im, radius)
+        # sub_im_plotting(sub_im, radius)
 
         return sub_im, aperture, annulus, bad_file
     else:
@@ -279,3 +286,44 @@ def mag_mean(mag, mag_unc):
         numerator += mag_unc[i] ** 2
 
     return sum_xw/sum_w, np.sqrt(numerator / 9)
+
+
+def fit_open(filename):
+    """
+
+    :param filename:
+    :return:
+    """
+    # Opens file and saves data and header
+    file = fits.open(filename)[0]
+    data, header = file.data, file.header
+
+    return data, header
+
+
+def reduced_chi_squared(observed, expected, uncertainties, degrees_of_freedom):
+    """
+    Calculate the reduced chi-squared statistic.
+
+    Parameters:
+    - observed: Array of observed data points.
+    - expected: Array of expected (model) data points.
+    - uncertainties: Array of uncertainties associated with the observed data points.
+    - degrees_of_freedom: Degrees of freedom in the fit.
+
+    Returns:
+    - Reduced chi-squared statistic.
+    """
+    # Calculate residuals
+    residuals = (observed - expected) / uncertainties
+
+    # Calculate chi-squared
+    chi_squared = np.sum(residuals**2)
+
+    # Calculate reduced chi-squared
+    reduced_chi_squared_value = chi_squared / degrees_of_freedom
+
+    return reduced_chi_squared_value
+
+
+
