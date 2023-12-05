@@ -119,11 +119,6 @@ def get_flux(sub, app, ann, gain=4):
     std_bg = np.std((sub * ann)/N_ann)
     unc_F = np.sqrt((F / gain) + N_app * (1 + (np.pi / 2) * (N_app / N_ann) * std_bg ** 2))
 
-    #term1 = F / gain
-    #term2 = N_app * (1 + np.pi / 2 * N_app / N_ann) * std_bg ** 2
-
-    #unc_F = np.sqrt(term1 + term2)
-
     return F, unc_F
 
 
@@ -152,12 +147,13 @@ def magnitude(I1, uI1, I2, uI2, m2, um2):
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         m1 = -1
+
     # Derived from information listen on Slide __ of ___
     try:
         um1 = np.sqrt(um2 ** 2 + (-2.512 / (np.log(10) * I1)) ** 2 * uI1 ** 2 +
-                      (2.512 / (np.log(10) * I2)) ** 2 * uI2 ** 2
-                      )
-    except:
+                      (2.512 / (np.log(10) * I2)) ** 2 * uI2 ** 2)
+    except RuntimeWarning as e:
+        print(f"RuntimeWarning: {e}")
         um1 = -1
 
     return m1, um1
@@ -219,7 +215,7 @@ def fluxes(data, key, w):
 
 
         # Calculates the optimal radius for the aperture from the standard deviation
-        radius = 2.355 * popt[2]
+        radius = 3 * popt[2]
 
         # Checks if the standard deviation falls in the wanted range. If not the file is labeled bad and will be
         # discarded
@@ -260,14 +256,17 @@ def light_curve(t, C, t_1):
     return C * (t - t_1) ** 2
 
 
-def mag_to_flux(m, const=0):
+def mag_to_flux(m, m_err, m_p, m_p_err):
     """
     Converts the magnitude to an intensity value for looking at the light curve
     :param m: apparent magnitude
     :param const: constant which can be set if needed
     :return: Intensity relating to the provided magnitude
     """
-    return 10 ** (-m / 2.5) * 10 ** (const / 2.5)
+
+    flux = 10 ** (-(m-m_p) / 2.5)
+    flux_unc = (2*np.log(10))/(5*10**(2*(m-m_p)/5)) * np.sqrt((m_err/m)**2 + (m_p_err/m_p)**2)
+    return flux, flux_unc
 
 
 def mag_mean(mag, mag_unc):
@@ -326,4 +325,40 @@ def reduced_chi_squared(observed, expected, uncertainties, degrees_of_freedom):
     return reduced_chi_squared_value
 
 
+def binning(time_ends, num, x, y, y_err):
+    """
 
+    :param time_ends: list, contains the start and end times for a np.linspace array, len(time_ends) == 2
+    :param num: int, number of steps in the np.linspace array
+    :param x: 1D NumPy array, x values for binning
+    :param y: 1D NumPy array, y values for binning
+    :param y_err: 1D NumPy array, error in y values for binning
+    :return: 3 binned 2D NumPy arrays, x binned, y binned, y_err binned
+    """
+
+    start, stop = time_ends
+    bin_edges = np.linspace(start, stop, num=num)
+    inds = np.digitize(x, bin_edges)
+
+    binned_x = np.zeros(len(bin_edges) - 1)
+    binned_y_mean = np.zeros(len(bin_edges) - 1)
+    binned_y_err = np.zeros(len(bin_edges) - 1)
+
+    # TODO: Find how to find the actual error from a weighted average calculation
+    for i in range(1, len(bin_edges)):
+        bin_mask = (inds == i)
+        binned_x[i - 1] = np.mean(x[bin_mask])
+
+        # Calculate weighted mean for y values
+        weights = 1.0 / y_err[bin_mask]  # Assuming y_err contains the weights
+        weighted_sum = np.sum(y[bin_mask] * weights)
+        sum_of_weights = np.sum(weights)
+        binned_y_mean[i - 1] = weighted_sum / sum_of_weights
+        binned_y_err[i - 1] = np.mean(y_err[bin_mask])
+
+    mask = ~np.isnan(binned_y_mean)
+    binned_x = binned_x[mask]
+    binned_y_err = binned_y_err[mask]
+    binned_y_mean = binned_y_mean[mask]
+
+    return binned_x, binned_y_mean, binned_y_err

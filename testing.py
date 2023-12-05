@@ -1,5 +1,4 @@
-"""===IMPORTS==="""
-from datetime import datetime
+import scipy.optimize as sc
 from astropy.wcs import WCS
 import astropy
 import numpy as np
@@ -9,51 +8,78 @@ import helpful_functions as pf
 import warnings
 from astropy import units as u
 from astropy.coordinates import SkyCoord
+from datetime import datetime
 
 warnings.filterwarnings('ignore', category=UserWarning, append=True)
 warnings.filterwarnings("ignore", category=astropy.wcs.FITSFixedWarning)
 
+
+# Shape --> {key: [Coordinates in sky (degrees), magnitude, uncertainty in magnitude]}
 OBJECTS = {
     "star_1": [SkyCoord(ra='0:56:49.70', dec='-37:01:38.31', frame="icrs", unit=(u.hourangle, u.deg)), 16.32, 0.07],
     "star_2": [SkyCoord(ra='0:56:46.43', dec='-37:02:29.50', frame="icrs", unit=(u.hourangle, u.deg)), 17.16, 0.08],
     "star_3": [SkyCoord(ra='0:56:58.27', dec='-36:58:16.60', frame="icrs", unit=(u.hourangle, u.deg)), 15.62, 0.02],
     "SN": [SkyCoord(ra="0:57:03.1827", dec='-37:02:23.654', frame="icrs", unit=(u.hourangle, u.deg)), 0, 0]}
 
-fluxes, flux_errs = np.zeros(4), np.zeros(4)
-mag_sn, mag_err_sn = np.zeros(3), np.zeros(3)
+h = fits.open("Data/Fits/AST325-326-SN-20150924.5410.fits")[0].header
+ref_time = datetime.fromisoformat(h["DATE-OBS"])
 
-f = "Data/Fits/AST325-326-SN-20151027.2806.fits"
-file = fits.open(f)[0]
-data, header = file.data, file.header
+"""==================== MAIN ======================="""
+# Read text file of all the file names
+with open("Data/cleaned_filelist.txt") as f:
+    filenames = [line for line in f.readlines()]
 
-# Saves the (w value?) to be used in determining coordinates
-w = WCS(header)
+filenames = np.array(filenames)
 
-#sub_im_sn, aperture_sn, annulus_sn, bad_sn = pf.fluxes(data, "SN", w)
-#fluxes[3], flux_errs[3] = pf.get_flux(sub_im_sn, aperture_sn, annulus_sn)
+# Sets arrays to carry flux and magnitude data for the reference stars and supernova
+time, flux, flux_err = np.loadtxt("Data/cleaned data/fluxes_sn", unpack=True, delimiter=',')
 
-# Loops through each reference star
-for jj, key in enumerate(["star_1", "star_2", "star_3"]):
+filter = flux < 30000
+time, flux, flux_err = time[filter], flux[filter], flux_err[filter]
+# Removes nan values that may have gotten through and makes sure the arrays match these changes
+plt.scatter(time, flux)
+plt.show()
+# Checks and removes magnitudes with signal-to-noise ratio less than 3
 
-    # Takes the data to find a sub image around the star and return an optimal aperture and annulus to
-    # calculate flux from
-    sub_im, aperture, annulus, bad = pf.fluxes(data, key, w)
+peak_flux = np.max(flux)
+peak_flux_err = flux_err[np.where(flux == peak_flux)[0][0]]
+
+norm_intensities = flux / peak_flux
+norm_unc = (2*np.ln(10))/5 * norm_intensities
+# Converts the magnitudes to norm intensities
+
+time = time[norm_intensities <= 0.4]
+norm_intensities_err = norm_intensities_err[norm_intensities <= 0.4]
+norm_intensities = norm_intensities[norm_intensities <= 0.4]
 
 
-    # Calculates flux
-    # If the bad value comes back true, flux is not calculated and kept as 0 which makes removing easier later
-    if bad is False:
-        fluxes[jj], flux_errs[jj] = pf.get_flux(sub_im, aperture, annulus)
-        mag_sn[jj], mag_err_sn[jj] = pf.magnitude(fluxes[3], flux_errs[3], fluxes[jj],
-                                                  flux_errs[jj], OBJECTS[key][1],
-                                                  OBJECTS[key][2])
+norm_intensities = norm_intensities[time < 1.5e6]
+norm_intensities_err = norm_intensities_err[time < 1.5e6]
+time = time[time < 1.5e6]
+time = time/86400
 
 
-mag, mag_err = pf.mag_mean(mag_sn, mag_err_sn)
+binned_times, binned_flux, binned_flux_err = pf.binning([-4, 8], 8, time, norm_intensities, norm_intensities_err)
 
-print(f"The calculated fluxes are:\n"
-      f"{fluxes[0]} \u00B1 {flux_errs[0]} which is {flux_errs[0]/fluxes[0] * 100}\n"
-      f"{fluxes[1]} \u00B1 {flux_errs[1]} which is {flux_errs[1]/fluxes[1] * 100}\n"
-      f"{fluxes[2]} \u00B1 {flux_errs[2]} which is {flux_errs[1]/fluxes[2] * 100}\n")
+popt_og, pcov_og = sc.curve_fit(pf.light_curve, time, norm_intensities)
+popt_bin, pcov_bin = sc.curve_fit(pf.light_curve, binned_times, binned_flux)
 
-print(f"The magnitude of the Supernova is: {mag} \u00B1 {mag_err}")
+
+plt.figure(figsize=(10, 10))
+plt.suptitle("Relative Intensity of Supernova")
+
+plt.subplot(2, 1, 1)
+plt.errorbar(time, norm_intensities, norm_intensities_err, fmt='o', label="Magnitude")
+plt.plot(time, pf.light_curve(time, *popt_og))
+plt.ylabel("Relative Intensity")
+plt.legend()
+
+plt.subplot(2, 1, 2)
+plt.errorbar(binned_times, binned_flux, binned_flux_err, label="Binned", fmt="o")
+plt.plot(binned_times, pf.light_curve(binned_times, *popt_bin))
+plt.ylabel("Relative Intensity (Binned)")
+plt.xlabel("Days")
+plt.legend()
+
+plt.savefig("Plots/Curve_fit")
+plt.show()

@@ -14,7 +14,6 @@ from datetime import datetime
 warnings.filterwarnings('ignore', category=UserWarning, append=True)
 warnings.filterwarnings("ignore", category=astropy.wcs.FITSFixedWarning)
 
-
 # Shape --> {key: [Coordinates in sky (degrees), magnitude, uncertainty in magnitude]}
 OBJECTS = {
     "star_1": [SkyCoord(ra='0:56:49.70', dec='-37:01:38.31', frame="icrs", unit=(u.hourangle, u.deg)), 16.32, 0.07],
@@ -86,18 +85,18 @@ for ii, f in enumerate(file_array):
     # Updates magnitude and magnitude error
     mag[ii], mag_err[ii] = pf.mag_mean(mag_sn, mag_err_sn)
 
-
 # Plots apparent magnitude light curve
 plt.figure(figsize=(15, 5))
-plt.scatter(time, mag, label="Magnitude")
-plt.title("Apparent Magnitude Light Curve for Supernova- Group X")
-plt.xlabel("Time [Ms]")
-plt.ylabel("Apparent Magnitude")
+plt.errorbar(time, mag, mag_err, label="Magnitude", fmt=".", ecolor="red")
+
 plt.ylim(25, 18)
-plt.legend()
-plt.savefig("Plots/Magnitude_Plots_temp")
+plt.ylabel('Magnitude', size=16)
+plt.xlabel('Time', size=16)
+plt.title("Supernova Light Curve", size=18)
+plt.grid(which='both', alpha=0.5)
 plt.show()
 
+"""
 with open("Data/cleaned data/times", "w") as f:
     for line in time:
         f.write(str(line))
@@ -111,4 +110,22 @@ with open("Data/cleaned data/mags", "w") as f:
 with open("Data/cleaned data/mag_uncs", "w") as f:
     for line in mag_err:
         f.write(str(line))
+        f.write('\n')
+
+with open("Data/cleaned data/testing", 'w') as f:
+    for i in range(0, len(mag_err)):
+        f.write(f"{time[i]}, {mag[i]}, {mag_err[i]}")
+        f.write('\n')
+"""
+
+time = np.array(time)
+
+with open(f"Data/cleaned data/fluxes_sn", 'w') as f:
+    filter = (fluxes[3] / flux_errs[3]) > 3
+    print(filter)
+    time_filter = time[filter]
+    flux = fluxes[3][filter]
+    flux_err = flux_errs[3][filter]
+    for j in range(0, len(flux)):
+        f.write(f"{time_filter[j]}, {flux[j]}, {flux_err[j]}")
         f.write('\n')
