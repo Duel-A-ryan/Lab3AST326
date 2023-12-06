@@ -67,31 +67,23 @@ for ii, f in enumerate(file_array):
         if bad is False:
             fluxes[jj, ii], flux_errs[jj, ii] = pf.get_flux(sub_im, aperture, annulus)
 
-_filter = fluxes[0] > 10000
-
-file_array = file_array[_filter]
-flux0 = fluxes[0][_filter]
-flux1 = fluxes[1][_filter]
-flux2 = fluxes[2][_filter]
 
 # Plot the fluxes gathered for all the data
 plt.figure(figsize=(15, 5))
-plt.plot(file_array, flux0, label="Star 1", color="blue")
-plt.plot(file_array, flux1, label="Star 2", color="orange")
-plt.plot(file_array, flux2, label="Star 3", color="green")
+plt.scatter(file_array, fluxes[0], label="Star 1", color="blue")
+plt.scatter(file_array, fluxes[1], label="Star 2", color="orange")
+plt.scatter(file_array, fluxes[2], label="Star 3", color="green")
 plt.yscale("log")
 plt.ylim(1e3, 5e5)
 plt.legend()
 plt.savefig("Plots/Logarithmic_Flux_Plot")
 plt.show()
 
+_filter = fluxes[1] > 1000
+file_array = file_array[_filter]
+
 # Saves the good files into new text file to be used for calculations in differential.py
 with open("Data/cleaned_filelist.txt", "w") as f:
     for line in file_array:
         f.write(line[:-1])
-        f.write('\n')
-
-with open("Data/cleaned data/fluxes_test.txt", "w") as f:
-    for i in range(0, len(fluxes[0])):
-        f.write(f"{fluxes[0][i]}, {fluxes[1][i]}, {fluxes[2][i]}")
         f.write('\n')

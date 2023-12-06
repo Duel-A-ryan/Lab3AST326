@@ -11,7 +11,7 @@ from astropy.io import fits
 
 warnings.filterwarnings('ignore', category=UserWarning, append=True)
 warnings.filterwarnings("ignore", category=astropy.wcs.FITSFixedWarning)
-
+warnings.filterwarnings("ignore", category=RuntimeWarning, append=True)
 
 # Shape --> {key: [Coordinates in sky (degrees), magnitude, uncertainty in magnitude]}
 OBJECTS = {
@@ -74,7 +74,7 @@ def get_aperture(shape, center, radius):
     rows, cols = shape
     y, x = np.ogrid[:rows, :cols]
     mask = (x - center[1]) ** 2 + (y - center[0]) ** 2 <= radius ** 2
-    return mask.astype(np.uint8)
+    return mask.astype(bool)
 
 
 def get_annulus(shape, center, radii):
@@ -91,7 +91,7 @@ def get_annulus(shape, center, radii):
     y, x = np.ogrid[:rows, :cols]
     mask = (radii[0] ** 2 <= (x - center[1]) ** 2 + (y - center[0]) ** 2) & \
            ((x - center[1]) ** 2 + (y - center[0]) ** 2 <= radii[1] ** 2)
-    return mask.astype(np.uint8)
+    return mask.astype(bool)
 
 
 # TODO: CHECK IF THE CALCULATIONS GO CORRECTLY
@@ -114,10 +114,11 @@ def get_flux(sub, app, ann, gain=4):
     else:
         I_bg = 0
         print("ERROR")
-    F = np.sum((sub[app > 0] - I_bg) * app[app > 0])
+    F = np.sum((sub-I_bg)*app)
 
-    std_bg = np.std((sub * ann)/N_ann)
-    unc_F = np.sqrt((F / gain) + N_app * (1 + (np.pi / 2) * (N_app / N_ann) * std_bg ** 2))
+    #std_bg = np.std((sub * ann)/N_ann) ** 2
+    std_bg = np.var(sub[ann])
+    unc_F = np.sqrt((F / gain) + N_app * (1 + (np.pi / 2) * (N_app / N_ann) * std_bg))
 
     return F, unc_F
 

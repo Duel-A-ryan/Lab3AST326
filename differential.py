@@ -97,21 +97,6 @@ plt.grid(which='both', alpha=0.5)
 plt.show()
 
 """
-with open("Data/cleaned data/times", "w") as f:
-    for line in time:
-        f.write(str(line))
-        f.write('\n')
-
-with open("Data/cleaned data/mags", "w") as f:
-    for line in mag:
-        f.write(str(line))
-        f.write('\n')
-
-with open("Data/cleaned data/mag_uncs", "w") as f:
-    for line in mag_err:
-        f.write(str(line))
-        f.write('\n')
-
 with open("Data/cleaned data/testing", 'w') as f:
     for i in range(0, len(mag_err)):
         f.write(f"{time[i]}, {mag[i]}, {mag_err[i]}")
