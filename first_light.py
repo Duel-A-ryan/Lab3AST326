@@ -37,53 +37,66 @@ mag = np.loadtxt("Data/cleaned data/mags")
 mag_err = np.loadtxt("Data/cleaned data/mag_uncs")
 
 # Removes nan values that may have gotten through and makes sure the arrays match these changes
-time = time[~np.isnan(mag)]
-mag_err = mag_err[~np.isnan(mag)]
-mag = mag[~np.isnan(mag)]
+_filter = ~np.isnan(mag)
+_filter = _filter & (mag > 17) & (mag < 23)
 
+times, mags, mag_err = time[_filter], mag[_filter], mag_err[_filter]
+
+flux, flux_err = pf.mag_to_flux(mags, mag_err)
 # Checks and removes magnitudes with signal-to-noise ratio less than 3
-s2n = mag/mag_err
-time = time[s2n >= 3]
-mag_err = mag_err[s2n >= 3]
-mag = mag[s2n >= 3]
-peak_mag = np.min(mag[(22 > mag) & (mag > 17)])
-peak_mag_err = np.min(mag_err[(22 > mag) & (mag > 17)])
 
-# Converts the magnitudes to norm intensities
-norm_intensities, norm_intensities_err = pf.mag_to_flux(mag, mag_err, peak_mag, peak_mag_err)
+peak_flux = np.max(flux)
+index = np.argmax(flux)
+peak_flux_err = flux_err[index]
 
-time = time[norm_intensities <= 0.4]
-norm_intensities_err = norm_intensities_err[norm_intensities <= 0.4]
-norm_intensities = norm_intensities[norm_intensities <= 0.4]
+norm_flux, norm_flux_err = pf.normalize_flux(flux, flux_err, peak_flux, peak_flux_err)
 
+peak_mag = np.min(mags)
+index = np.argmin(mags)
+peak_mag_err = mag_err[index]
 
-norm_intensities = norm_intensities[time < 1.5e6]
-norm_intensities_err = norm_intensities_err[time < 1.5e6]
-time = time[time < 1.5e6]
+_filter = norm_flux <= 0.4
+
+time = times[_filter]
+norm_flux_err = norm_flux_err[_filter]
+norm_flux = norm_flux[_filter]
+
+_filter = time < 1.5e6
+
+norm_flux = norm_flux[_filter]
+norm_flux_err = norm_flux_err[_filter]
+time = time[_filter]
 time = time/86400
 
 
-binned_times, binned_flux, binned_flux_err = pf.binning([-4, 8], 8, time, norm_intensities, norm_intensities_err)
+binned_times, binned_flux, binned_flux_err = pf.binning([-4, 8], 9, time, norm_flux, norm_flux_err)
 
-popt_og, pcov_og = sc.curve_fit(pf.light_curve, time, norm_intensities)
+popt_og, pcov_og = sc.curve_fit(pf.light_curve, time, norm_flux)
 popt_bin, pcov_bin = sc.curve_fit(pf.light_curve, binned_times, binned_flux)
 
+pstd_og = np.sqrt(np.diag(pcov_og))
+pstd_bin = np.sqrt(np.diag(pcov_bin))
 
-plt.figure(figsize=(10, 10))
-plt.suptitle("Relative Intensity of Supernova")
+plt.figure()
 
 plt.subplot(2, 1, 1)
-plt.errorbar(time, norm_intensities, norm_intensities_err, fmt='o', label="Magnitude")
+plt.errorbar(time, norm_flux, norm_flux_err, fmt='o', label="Magnitude")
 plt.plot(time, pf.light_curve(time, *popt_og))
 plt.ylabel("Relative Intensity")
 plt.legend()
 
 plt.subplot(2, 1, 2)
 plt.errorbar(binned_times, binned_flux, binned_flux_err, label="Binned", fmt="o")
-plt.plot(binned_times, pf.light_curve(binned_times, *popt_bin))
+plt.plot(time, pf.light_curve(time, *popt_bin))
+plt.ylim(0, 0.4)
 plt.ylabel("Relative Intensity (Binned)")
-plt.xlabel("Days")
+plt.xlabel("Days (Relative to September 24th)")
 plt.legend()
 
-plt.savefig("Plots/Curve_fit")
+chi = pf.reduced_chi_squared(binned_flux, pf.light_curve(binned_times, *popt_bin), binned_flux_err, len(binned_flux) - 1)
+plt.suptitle(f"Relative Intensity of Supernova Fitted to $I(t)=C(t-t_1)^2$")
+plt.savefig("Plots/first_light")
 plt.show()
+
+print(f"The first light is {popt_bin[1]:.4} for the binned values and {popt_og[1]:.4} for the unbinned")
+print(f"For the binned data the uncertainties are:\nu(C)={pstd_bin[0]}\nu(t_1)={pstd_bin[1]}")

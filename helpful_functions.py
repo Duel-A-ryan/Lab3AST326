@@ -22,6 +22,22 @@ OBJECTS = {
 
 """==================== FUNCTIONS ======================="""
 
+def read_fits(filename):
+    """
+
+    :param filename:
+    :return:
+    """
+
+    # Opens file and saves data and header
+    file = fits.open(filename)[0]
+    data, header = file.data, file.header
+
+    #data = data.astype(int)
+    data[data < -1e3] = ((2 ** 15 - 1) - np.abs(data[data < -1e3])) + (2 ** 15 - 1)
+    # Saves the (w value?) to be used in determining coordinates
+    w = WCS(header)
+    return data, header, w
 
 def show_ds9(data, title):
     """
@@ -109,18 +125,19 @@ def get_flux(sub, app, ann, gain=4):
 
     N_app = app[app > 0].size
     N_ann = ann[ann > 0].size
+
     if N_ann > 0:
         I_bg = np.sum(sub * ann) / N_ann
+        F = np.sum((sub - I_bg) * app)
+
+        std_bg = np.var(sub[ann])
+        unc_F = np.sqrt((F / gain) + N_app * (1 + (np.pi / 2) * (N_app / N_ann) * std_bg))
+
+        s2n = F/I_bg
+
+        return F, unc_F, s2n
     else:
-        I_bg = 0
-        print("ERROR")
-    F = np.sum((sub-I_bg)*app)
-
-    #std_bg = np.std((sub * ann)/N_ann) ** 2
-    std_bg = np.var(sub[ann])
-    unc_F = np.sqrt((F / gain) + N_app * (1 + (np.pi / 2) * (N_app / N_ann) * std_bg))
-
-    return F, unc_F
+        return 0, 0, 0
 
 
 def magnitude(I1, uI1, I2, uI2, m2, um2):
@@ -138,29 +155,16 @@ def magnitude(I1, uI1, I2, uI2, m2, um2):
              object
     """
     # Uses equation listed on Slide __ of ___
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", RuntimeWarning)
-            m1 = m2 - 2.512 * np.log10(I1 / I2)
-    except RuntimeWarning as e:
-        print(f"RuntimeWarning: {e}")
-        m1 = -1
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        m1 = -1
+    m1 = m2 - 2.512 * np.log10(I1 / I2)
 
     # Derived from information listen on Slide __ of ___
-    try:
-        um1 = np.sqrt(um2 ** 2 + (-2.512 / (np.log(10) * I1)) ** 2 * uI1 ** 2 +
-                      (2.512 / (np.log(10) * I2)) ** 2 * uI2 ** 2)
-    except RuntimeWarning as e:
-        print(f"RuntimeWarning: {e}")
-        um1 = -1
+
+    um1 = np.sqrt(um2 ** 2 + (1.087 * (uI1 / I1)) ** 2 + (1.087 * (uI2 / I2)) ** 2)
 
     return m1, um1
 
 
-def fluxes(data, key, w):
+def stuff(data, key, w):
     """
     Takes in fits data and for a given reference star makes a sub image around it. Finds the optimal radius for aperture
     and annulus masks and determines if a file is poor quality. This is done through the Gaussian curve fit made from a
@@ -175,8 +179,8 @@ def fluxes(data, key, w):
              2D NumPy array, annulus data,
              bool: True if file is considered bad
     """
-    min_value = np.min(data)
-    data = data + min_value
+    # min_value = np.min(data)
+    # data = data + min_value
 
     # Set bad_file to False until shown to be poor quality
     bad_file = False
@@ -191,49 +195,52 @@ def fluxes(data, key, w):
     boxsize = 50
     sub_im = data[y - boxsize: y + boxsize + 1, x - boxsize: x + boxsize + 1]
 
-    #centroid = np.round(get_centroid(sub_im), 0).astype(int)
-    #y += centroid[0]
-    #x += centroid[1]
-
-    #sub_im = data[y - boxsize: y + boxsize + 1, x - boxsize: x + boxsize + 1]
     # Finds the centroids of the plot and then calculates the pixel offset from the center and the centroid
     # The offset is then accounted for and a new sub image is created with the object now centered
 
     # Checks if the final image is the correct shape
     if sub_im.shape == (2 * boxsize + 1, 2 * boxsize + 1):
 
-        # Gets a tuple with the shape of the 2D array to then get a singular row going through the center of the object
-        # Gaussian curve fit is then applied to find the standard deviation from the rows intensity data
-        shape = sub_im.shape[0]
-        gaus_x, gaus_y = np.arange(shape), sub_im[shape // 2, :]
-        popt, _ = sc.curve_fit(gaussian, gaus_x, gaus_y, p0=[max(gaus_y), shape // 2, 10, 0], maxfev=200000)
+        centroid = np.round(get_centroid(sub_im), 0).astype(int)
+        y += centroid[0]
+        x += centroid[1]
 
-        # Plots the Gaussian alongside the data points
+        sub_im = data[y - boxsize: y + boxsize + 1, x - boxsize: x + boxsize + 1]
 
-        #plt.plot(gaus_x, gaus_y, '.', label="Data Points")
-        #plt.plot(gaus_x, gaussian(gaus_x, *popt), label=fr"Gaussian with $\sigma = {popt[2]:.3}$", color="red")
-        #plt.legend()
+        if sub_im.shape == (2 * boxsize + 1, 2 * boxsize + 1):
 
+            # Gets a tuple with the shape of the 2D array to then get a singular row going through the center of the object
+            # Gaussian curve fit is then applied to find the standard deviation from the rows intensity data
+            shape = sub_im.shape[0]
+            gaus_x, gaus_y = np.arange(shape), sub_im[shape // 2, :]
+            popt, _ = sc.curve_fit(gaussian, gaus_x, gaus_y, p0=[max(gaus_y), shape // 2, 10, 0], maxfev=200000)
 
-        # Calculates the optimal radius for the aperture from the standard deviation
-        radius = 3 * popt[2]
+            # Plots the Gaussian alongside the data points
 
-        # Checks if the standard deviation falls in the wanted range. If not the file is labeled bad and will be
-        # discarded
-        if 1.5 < popt[2] < 5:
-            aperture = get_aperture(sub_im.shape, (50, 50), radius)
-            annulus = get_annulus(sub_im.shape, (50, 50), (radius + 4, radius + 7))
+            # plt.plot(gaus_x, gaus_y, '.', label="Data Points")
+            # plt.plot(gaus_x, gaussian(gaus_x, *popt), label=fr"Gaussian with $\sigma = {popt[2]:.3}$", color="red")
+            # plt.legend()
+
+            # Calculates the optimal radius for the aperture from the standard deviation
+            radius = 3 * popt[2]
+
+            # Checks if the standard deviation falls in the wanted range. If not the file is labeled bad and will be
+            # discarded
+            if 1.5 < popt[2] < 5:
+                aperture = get_aperture(sub_im.shape, (50, 50), radius)
+                annulus = get_annulus(sub_im.shape, (50, 50), (20, 30))
+            else:
+                return sub_im, np.zeros((2 * boxsize + 1, 2 * boxsize + 1)), np.zeros(
+                    (2 * boxsize + 1, 2 * boxsize + 1)
+                    ), True
         else:
-            bad_file = True
-            aperture = get_aperture(sub_im.shape, (50, 50), 10)
-            annulus = get_annulus(sub_im.shape, (50, 50), (12, 15))
-
-        # Plot the star sub images TODO: hopefully centered next time
+            return sub_im, np.zeros((2 * boxsize + 1, 2 * boxsize + 1)), np.zeros((2 * boxsize + 1, 2 * boxsize + 1)
+                                                                                  ), True
+        # Plot the star sub images
         # sub_im_plotting(sub_im, radius)
-
         return sub_im, aperture, annulus, bad_file
     else:
-        return sub_im, 0, 0, True
+        return sub_im, np.zeros((2 * boxsize + 1, 2 * boxsize + 1)), np.zeros((2 * boxsize + 1, 2 * boxsize + 1)), True
 
 
 def sub_im_plotting(sub_im, radius):
@@ -257,17 +264,31 @@ def light_curve(t, C, t_1):
     return C * (t - t_1) ** 2
 
 
-def mag_to_flux(m, m_err, m_p, m_p_err):
-    """
+"""def mag_to_flux(m, m_err, m_p, m_p_err):
+    ""
     Converts the magnitude to an intensity value for looking at the light curve
     :param m: apparent magnitude
     :param const: constant which can be set if needed
     :return: Intensity relating to the provided magnitude
+    
+
+    flux = 10 ** (-(m - m_p) / 2.5)
+    flux_unc = (2 * np.log(10)) / (5 * 10 ** (2 * (m - m_p) / 5)) * np.sqrt((m_err / m) ** 2 + (m_p_err / m_p) ** 2)
+    return flux, flux_unc
+"""
+
+
+def mag_to_flux(m, m_err):
     """
 
-    flux = 10 ** (-(m-m_p) / 2.5)
-    flux_unc = (2*np.log(10))/(5*10**(2*(m-m_p)/5)) * np.sqrt((m_err/m)**2 + (m_p_err/m_p)**2)
-    return flux, flux_unc
+    :param m:
+    :param m_err:
+    :return:
+    """
+
+    flux = 10 ** (-m / 2.5)
+    flux_err = ((2 * np.log(10)) / 5) * flux * m_err
+    return flux, flux_err
 
 
 def mag_mean(mag, mag_unc):
@@ -285,7 +306,7 @@ def mag_mean(mag, mag_unc):
         sum_xw += mag[i] * w
         numerator += mag_unc[i] ** 2
 
-    return sum_xw/sum_w, np.sqrt(numerator / 9)
+    return sum_xw / sum_w, np.sqrt(numerator / 9)
 
 
 def fit_open(filename):
@@ -318,7 +339,7 @@ def reduced_chi_squared(observed, expected, uncertainties, degrees_of_freedom):
     residuals = (observed - expected) / uncertainties
 
     # Calculate chi-squared
-    chi_squared = np.sum(residuals**2)
+    chi_squared = np.sum(residuals ** 2)
 
     # Calculate reduced chi-squared
     reduced_chi_squared_value = chi_squared / degrees_of_freedom
@@ -363,3 +384,60 @@ def binning(time_ends, num, x, y, y_err):
     binned_y_mean = binned_y_mean[mask]
 
     return binned_x, binned_y_mean, binned_y_err
+
+
+def normalize_flux(flux, flux_err, peak_flux, peak_flux_err):
+    """
+
+    :param flux:
+    :param flux_err:
+    :param peak_flux:
+    :param peak_flux_err:
+    :return:
+    """
+
+    norm_flux = flux / peak_flux
+
+    term1 = (flux_err ** 2) / (peak_flux ** 2)
+    term2 = ((flux ** 2) * (peak_flux_err ** 2)) / (peak_flux ** 4)
+    norm_flux_err = np.sqrt(term1 + term2)
+
+    return norm_flux, norm_flux_err
+
+
+def weighted_mean(values, unc):
+    """
+    Calculate the weighted mean and its uncertainty.
+
+    :param values: NumPy array of values
+    :param unc: NumPy array of uncertainties corresponding to each value
+    :return: Tuple containing the weighted mean and its uncertainty
+    """
+
+    # Ensure values and unc are NumPy arrays
+    values = np.array(values)
+    unc = np.array(unc)
+
+    # Calculate the weighted mean
+    mean = np.sum(values * unc) / np.sum(unc)
+
+    # Calculate the uncertainty in the weighted mean
+    mean_unc = np.sqrt(np.sum((unc / np.sum(unc)) ** 2 * (values - mean) ** 2))
+
+    return mean, mean_unc
+
+
+def diff(x, ux, y, uy):
+    """
+
+    :param x:
+    :param ux:
+    :param y:
+    :param uy:
+    :return:
+    """
+
+    diff = x - y
+    unc = np.abs(diff) * np.sqrt((ux / x) ** 2 + (uy / y) ** 2)
+
+    return diff, unc

@@ -24,8 +24,8 @@ OBJECTS = {
 
 """=====MAIN====="""
 # Read text file of all the file names
-with open("Data/AST325-326-SN-filelist.txt") as f:
-    filenames = ["Data/Fits/" + line for line in f.readlines()]
+with open("Data/cleaned_filelist.txt") as f:
+    filenames = [line for line in f.readlines()]
 
 # Organizes the files in order of date collected
 file_times = []
@@ -41,10 +41,11 @@ file_times, filenames = zip(*sorted(zip(file_times, filenames)))
 filenames = np.array(filenames)
 file_times = np.array(file_times)
 
-file_array = filenames[100:110]
+file_array = filenames
 
 fluxes = np.zeros(len(file_array))
 flux_errs = np.zeros(len(file_array))
+s2n = np.zeros(len(file_array))
 
 for ii, file in enumerate(file_array):
 
@@ -53,9 +54,8 @@ for ii, file in enumerate(file_array):
     w = WCS(header)
 
     # Gets sub image data, aperture and annulus of supernova
-    sub_im, aperture, annulus, _ = pf.fluxes(data, "SN", w)
+    sub_im, aperture, annulus, _ = pf.stuff(data, "SN", w)
 
-    fluxes[ii], flux_errs[ii] = pf.get_flux(sub_im, aperture, annulus)
+    fluxes[ii], flux_errs[ii], s2n[ii] = pf.get_flux(sub_im, aperture, annulus)
 
-print(fluxes)
-print(flux_errs)
+print(s2n)

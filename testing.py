@@ -32,54 +32,57 @@ with open("Data/cleaned_filelist.txt") as f:
 filenames = np.array(filenames)
 
 # Sets arrays to carry flux and magnitude data for the reference stars and supernova
-time, flux, flux_err = np.loadtxt("Data/cleaned data/fluxes_sn", unpack=True, delimiter=',')
+time = np.loadtxt("Data/cleaned data/times")
+mag = np.loadtxt("Data/cleaned data/mags")
+mag_err = np.loadtxt("Data/cleaned data/mag_uncs")
 
-filter = flux < 30000
-time, flux, flux_err = time[filter], flux[filter], flux_err[filter]
 # Removes nan values that may have gotten through and makes sure the arrays match these changes
-plt.scatter(time, flux)
-plt.show()
+_filter = ~np.isnan(mag)
+_filter = _filter & (mag > 17) & (mag < 23)
+
+times, mags, mag_err = time[_filter], mag[_filter], mag_err[_filter]
+
+flux, flux_err = pf.mag_to_flux(mags, mag_err)
 # Checks and removes magnitudes with signal-to-noise ratio less than 3
 
 peak_flux = np.max(flux)
-peak_flux_err = flux_err[np.where(flux == peak_flux)[0][0]]
+index = np.argmax(flux)
+peak_flux_err = flux_err[index]
 
-norm_intensities = flux / peak_flux
-norm_unc = (2*np.ln(10))/5 * norm_intensities
-# Converts the magnitudes to norm intensities
+norm_flux, norm_flux_err = pf.normalize_flux(flux, flux_err, peak_flux, peak_flux_err)
 
-time = time[norm_intensities <= 0.4]
-norm_intensities_err = norm_intensities_err[norm_intensities <= 0.4]
-norm_intensities = norm_intensities[norm_intensities <= 0.4]
+peak_mag = np.min(mags)
+index = np.argmin(mags)
+peak_mag_err = mag_err[index]
 
+_filter = norm_flux <= 0.4
 
-norm_intensities = norm_intensities[time < 1.5e6]
-norm_intensities_err = norm_intensities_err[time < 1.5e6]
-time = time[time < 1.5e6]
+time = times[_filter]
+norm_flux_err = norm_flux_err[_filter]
+norm_flux = norm_flux[_filter]
+
+_filter = time < 1.5e6
+
+norm_flux = norm_flux[_filter]
+norm_flux_err = norm_flux_err[_filter]
+time = time[_filter]
 time = time/86400
 
+chi_vals = []
+step_ind = []
 
-binned_times, binned_flux, binned_flux_err = pf.binning([-4, 8], 8, time, norm_intensities, norm_intensities_err)
+steps = np.arange(6, 100, 1)
 
-popt_og, pcov_og = sc.curve_fit(pf.light_curve, time, norm_intensities)
-popt_bin, pcov_bin = sc.curve_fit(pf.light_curve, binned_times, binned_flux)
+for step in steps:
+    binned_times, binned_flux, binned_flux_err = pf.binning([-4, 8], step, time, norm_flux, norm_flux_err)
 
+    popt_bin, pcov_bin = sc.curve_fit(pf.light_curve, binned_times, binned_flux)
 
-plt.figure(figsize=(10, 10))
-plt.suptitle("Relative Intensity of Supernova")
+    chi = pf.reduced_chi_squared(binned_flux, pf.light_curve(binned_times, *popt_bin), binned_flux_err, len(binned_flux) - 1)
+    chi_vals.append(chi)
+    step_ind.append(step)
 
-plt.subplot(2, 1, 1)
-plt.errorbar(time, norm_intensities, norm_intensities_err, fmt='o', label="Magnitude")
-plt.plot(time, pf.light_curve(time, *popt_og))
-plt.ylabel("Relative Intensity")
-plt.legend()
-
-plt.subplot(2, 1, 2)
-plt.errorbar(binned_times, binned_flux, binned_flux_err, label="Binned", fmt="o")
-plt.plot(binned_times, pf.light_curve(binned_times, *popt_bin))
-plt.ylabel("Relative Intensity (Binned)")
-plt.xlabel("Days")
-plt.legend()
-
-plt.savefig("Plots/Curve_fit")
-plt.show()
+print(min(chi_vals))
+step_index = chi_vals.index(min(chi_vals))
+print(step_index)
+print(step_ind[step_index])

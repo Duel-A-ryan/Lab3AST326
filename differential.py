@@ -12,6 +12,7 @@ from astropy.wcs.utils import skycoord_to_pixel
 from datetime import datetime
 
 warnings.filterwarnings('ignore', category=UserWarning, append=True)
+warnings.filterwarnings('ignore', category=RuntimeWarning, append=True)
 warnings.filterwarnings("ignore", category=astropy.wcs.FITSFixedWarning)
 
 # Shape --> {key: [Coordinates in sky (degrees), magnitude, uncertainty in magnitude]}
@@ -39,6 +40,7 @@ filenames = np.array(filenames)
 file_array = filenames
 fluxes = np.zeros((4, len(file_array)))
 flux_errs = np.zeros((4, len(file_array)))
+s2n = np.zeros(len(file_array))
 mag = np.zeros(len(file_array))
 mag_err = np.zeros(len(file_array))
 time = []
@@ -60,8 +62,8 @@ for ii, f in enumerate(file_array):
     sn_x, sn_y = sn_pos_pxl[0].astype(int), sn_pos_pxl[1].astype(int)
 
     # Gathers sub image around SN and optimal aperture and annulus for calculations
-    sub_im_sn, aperture_sn, annulus_sn, _ = pf.fluxes(data, "SN", w)
-    fluxes[3, ii], flux_errs[3, ii] = pf.get_flux(sub_im_sn, aperture_sn, annulus_sn)
+    sub_im_sn, aperture_sn, annulus_sn, _ = pf.stuff(data, "SN", w)
+    fluxes[3, ii], flux_errs[3, ii], s2n[ii] = pf.get_flux(sub_im_sn, aperture_sn, annulus_sn)
 
     # Makes zero arrays to hold magnitude and uncertainty from each reference star calculation to then be averaged later
     mag_sn = np.zeros(3)
@@ -72,12 +74,12 @@ for ii, f in enumerate(file_array):
 
         # Takes the data to find a sub image around the star and return an optimal aperture and annulus to
         # calculate flux from
-        sub_im, aperture, annulus, bad = pf.fluxes(data, key, w)
+        sub_im, aperture, annulus, bad = pf.stuff(data, key, w)
 
         # Calculates flux
         # If bad comes back as true, flux and magnitude are left as 0 to make removal easier
         if bad is False:
-            fluxes[jj, ii], flux_errs[jj, ii] = pf.get_flux(sub_im, aperture, annulus)
+            fluxes[jj, ii], flux_errs[jj, ii], _ = pf.get_flux(sub_im, aperture, annulus)
             mag_sn[jj], mag_err_sn[jj] = pf.magnitude(fluxes[3, ii], flux_errs[3, ii], fluxes[jj, ii],
                                                       flux_errs[jj, ii], OBJECTS[key][1],
                                                       OBJECTS[key][2])
@@ -96,21 +98,26 @@ plt.title("Supernova Light Curve", size=18)
 plt.grid(which='both', alpha=0.5)
 plt.show()
 
-"""
 with open("Data/cleaned data/testing", 'w') as f:
     for i in range(0, len(mag_err)):
         f.write(f"{time[i]}, {mag[i]}, {mag_err[i]}")
         f.write('\n')
-"""
 
 time = np.array(time)
 
+
+with open(f"Data/cleaned data/fluxes", 'w') as f:
+    for j in range(0, len(time)):
+        f.write(f"{time[j]}, {fluxes[0][j]}, {flux_errs[0][j]}, {fluxes[1][j]}, {flux_errs[1][j]}, {fluxes[2][j]}, {flux_errs[2][j]}")
+        f.write('\n')
+
 with open(f"Data/cleaned data/fluxes_sn", 'w') as f:
     filter = (fluxes[3] / flux_errs[3]) > 3
-    print(filter)
     time_filter = time[filter]
     flux = fluxes[3][filter]
     flux_err = flux_errs[3][filter]
     for j in range(0, len(flux)):
         f.write(f"{time_filter[j]}, {flux[j]}, {flux_err[j]}")
         f.write('\n')
+
+

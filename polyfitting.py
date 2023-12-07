@@ -10,66 +10,45 @@ warnings.filterwarnings("ignore", category=astropy.wcs.FITSFixedWarning)
 
 """=====MAIN====="""
 
-times = np.loadtxt("Data/cleaned data/times")
-mags = np.loadtxt("Data/cleaned data/mags")
-mag_err = np.loadtxt("Data/cleaned data/mag_uncs")
+times, mags, mag_err = np.loadtxt("Data/cleaned data/testing", delimiter=',', unpack=True)
 
-times = times[~np.isnan(mags)]
-mag_err = mag_err[~np.isnan(mags)]
-mags = mags[~np.isnan(mags)]
+times = times/86400
 
-s2n = mags / mag_err
+_filter = ~np.isnan(mags)
+_filter = _filter & (mags > 17) & (mags < 23)
 
-times = times[s2n >= 3]
-mags = mags[s2n >= 3]
-mag_err = mag_err[s2n >= 3]
+times, mags, mag_err = times[_filter], mags[_filter], mag_err[_filter]
 
-times = times[17 < mags]
-times = times[mags < 23]
-mag_err = mag_err[17 < mags]
-mag_err = mag_err[mags < 23]
-mags = mags[17 < mags]
-mags = mags[mags < 23]
+p_og, res_og = np.polyfit(times, mags, 3, cov=True)
+p = np.poly1d(p_og)
 
-binned_times, binned_mags, binned_mag_err = pf.binning([-5e4, 3e6], 101, times, mags, mag_err)
+_filter = np.abs(mags - p(times)) < 3.6*mag_err
+times, mags, mag_err = times[_filter], mags[_filter], mag_err[_filter]
 
-for n in range(2, 5):
+p_new, res_new = np.polyfit(times, mags, 3, cov=True)
+p = np.poly1d(p_new)
+chi_og = pf.reduced_chi_squared(mags, p(times), mag_err, len(mags) - 1)
 
-    p_og, res_og, _, _, _ = np.polyfit(times, mags, n, full=True)
-    pred_og = np.polyval(p_og, times)
-    chi_og = pf.reduced_chi_squared(mags, pred_og, mag_err, len(mags) - 1)
-    print(f"The original chi value is {chi_og:.4}")
+plt.figure(figsize=(15, 5))
+plt.title("B-band Magnitude Light Curve of AST325-326-SN")
+plt.ylabel("B-band Magnitude")
+plt.xlabel("Days (Reference Day September 24th)")
 
-    plt.figure(figsize=(15, 5))
-    plt.title(f"Reduced $\chi^2$ = {chi_og:.4}")
-    plt.subplot(2, 1, 1)
-    plt.errorbar(times, mags, mag_err, fmt="o")
-    plt.plot(times, pred_og, label=f"n={n}")
-    plt.ylim(24, 18)
-    plt.legend()
-    #plt.savefig(f"Plots/light_fit/og_{n}")
+plt.errorbar(times, mags, mag_err, fmt="o")
+plt.plot(times, p(times), label=f"n={3}")
+plt.ylim(24, 18)
+plt.legend()
+plt.savefig(f"Plots/light_curve_fit")
 
-    p_new, cov_new = np.polyfit(binned_times, binned_mags, n, w=1/binned_mag_err**2, cov=True)
-    p = np.poly1d(p_new)
+res = mags - p(times)
+plt.figure()
+plt.scatter(times, res, label=r"Residuals ($$")
+plt.hlines(0, xmin=-2, xmax=37, colors='black')
 
-    filter = np.abs(binned_mags - p(binned_times)) < 3 * binned_mag_err
+plt.title("Residual Plot of Light Curve Fitting")
+plt.savefig("Plots/Residuals/light_curve_res")
 
-    binned_times = binned_times[filter]
-    binned_mags = binned_mags[filter]
-    binned_mag_err = binned_mag_err[filter]
+print(f"Reduced $\chi^2$ = {chi_og:.4}")
 
-    p_new, cov_new = np.polyfit(binned_times, binned_mags, n, w=1 / binned_mag_err ** 2, cov=True)
-    p_n = np.poly1d(p_new)
-
-    chi_new = pf.reduced_chi_squared(binned_mags, p_n(binned_times), binned_mag_err, len(binned_mags) - 1)
-    print(f"The new chi value is {chi_new:.4}\n")
-
-    plt.title(f"Reduced $\chi^2$ = {chi_new:.4}")
-    plt.subplot(2, 1, 2)
-    plt.plot(binned_times, p_n(binned_times), label=f"n={n}")
-    plt.errorbar(binned_times, binned_mags, binned_mag_err, fmt="o")
-    plt.ylim(24, 18)
-    plt.legend()
-    plt.savefig(f"Plots/light_fit/bin_{n}")
 
 

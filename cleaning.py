@@ -48,24 +48,25 @@ flux_errs = np.zeros((3, len(file_array)))
 # Begins a loop through each file
 for ii, f in enumerate(file_array):
 
-    # Opens file and saves data and header
+    """# Opens file and saves data and header
     file = fits.open(f[:-1])[0]
     data, header = file.data, file.header
 
     # Saves the (w value?) to be used in determining coordinates
-    w = WCS(header)
+    w = WCS(header)"""
 
+    data, header, w = pf.read_fits(f[:-1])
     # Loops through each reference star
     for jj, key in enumerate(["star_1", "star_2", "star_3"]):
 
         # Takes the data to find a sub image around the star and return an optimal aperture and annulus to
         # calculate flux from
-        sub_im, aperture, annulus, bad = pf.fluxes(data, key, w)
+        sub_im, aperture, annulus, bad = pf.stuff(data, key, w)
 
         # Calculates flux
         # If the bad value comes back true, flux is not calculated and kept as 0 which makes removing easier later
         if bad is False:
-            fluxes[jj, ii], flux_errs[jj, ii] = pf.get_flux(sub_im, aperture, annulus)
+            fluxes[jj, ii], flux_errs[jj, ii], _ = pf.get_flux(sub_im, aperture, annulus)
 
 
 # Plot the fluxes gathered for all the data
